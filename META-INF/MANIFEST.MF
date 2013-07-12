@@ -1,0 +1,5 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: Sharefile_Py
+Bundle-SymbolicName: Sharefile_Py
+Bundle-Version: 1.0.0.qualifier
