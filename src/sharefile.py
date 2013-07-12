@@ -207,11 +207,12 @@ def users_create( authid, firstname, lastname, email, isemployee):
     #url_params.update(optional_parameters)
     
     url = 'https://%s.%s/rest/users.aspx?%s'%("electric-cloud", "sharefile.com", urllib.parse.urlencode(url_params))
-    print (url)
+    #print (url)
 
     try:
         response = json.loads(urllib.request.urlopen(url).read().decode("utf-8"))
         if not response['error']:
+            print("new user "+email +" created")
             print (response)
         else:
             print(('Error %d : %s'%(response['errorCode'], response['errorMessage'])))
@@ -242,7 +243,7 @@ def group_list( authid, targetName):
             #print (response)
             for item in response['value']:
                 if  item['name'] == targetName:
-                    print(('%s %s '%(item['id'], item['name'])))
+                    #print(('%s %s '%(item['id'], item['name'])))
                     return item['id']
                   
         else:
@@ -304,11 +305,12 @@ def group_addcontacts(authid, contacts,id):
    
     
     url = 'https://%s.%s/rest/group.aspx?%s'%("electric-cloud", "sharefile.com", urllib.parse.urlencode(url_params))
-    print (url)
+    #print (url)
 
     try:
         response = json.loads(urllib.request.urlopen(url).read().decode("utf-8"))
         if not response['error']:
+            print("user "+contacts+" added to groupId "+id )
             print (response)
         else:
             print(('Error %d : %s'%(response['errorCode'], response['errorMessage'])))
