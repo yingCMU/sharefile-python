@@ -1,8 +1,8 @@
-import urllib.request, urllib.error, urllib.parse, urllib.request, urllib.parse, urllib.error
+import urllib2, urllib
 import json
 import os
-
-
+from poster.encode import multipart_encode
+from poster.streaminghttp import register_openers
 
 """
 Copyright (c) 2013 Citrix Systems, Inc.
@@ -49,7 +49,7 @@ users_create('mysubdomain', 'mytopleveldomain', 'myauthid',          # required 
 See api.sharefile.com for optional parameter names for each operation.
 """
 
-def authenticate( username, password):
+def authenticate(subdomain, tld, username, password):
     """Calls getAuthID to retrieve an authid that will be used for subsequent calls to API. 
     
     If you normally login to ShareFile at an address like https://mycompany.sharefile.com
@@ -73,22 +73,19 @@ def authenticate( username, password):
     url_params = {'username':username, 'password':password, 'fmt':'json'}
     
     # construct url
-    url = 'https://%s.%s/rest/getAuthID.aspx?%s'%("electric-cloud", "sharefile.com", urllib.parse.urlencode(url_params))
+    url = 'https://%s.%s/rest/getAuthID.aspx?%s'%(subdomain, tld, urllib.urlencode(url_params))
     
     authid = None
-    rawresponse = urllib.request.urlopen(url).read().decode("utf-8")
-    print ("begin")
-    print (rawresponse)
-    print ("end")
+    
     try:
-        response = json.loads(rawresponse)
+        response = json.loads(urllib2.urlopen(url).read())
         # the response will either be returned with errod=False (no error) and include
         # a value, or error=True and include an errorCode and errorMessage
         if not response['error']:
             authid = response['value']
         else:
-            print(('Error %d : %s'%(response['errorCode'], response['errorMessage'])))
-    except urllib.error.HTTPError as ex_http:
+            print ('Error %d : %s'%(response['errorCode'], response['errorMessage']))
+    except urllib2.HTTPError as ex_http:
         print (ex_http)
     
     return authid
@@ -107,90 +104,125 @@ def folder_list(subdomain, tld, authid, path='/'):
     """
     url_params = {'authid':authid, 'fmt':'json', 'op':'list', 'path':path}
     
-    url = 'https://%s.%s/rest/folder.aspx?%s'%(subdomain, tld, urllib.parse.urlencode(url_params))
+    url = 'https://%s.%s/rest/folder.aspx?%s'%(subdomain, tld, urllib.urlencode(url_params))
 
     try:
-        response = json.loads(urllib.request.urlopen(url).read().decode("utf-8"))
+        response = json.loads(urllib2.urlopen(url).read())
 
         if not response['error']:
             #print response
             for item in response['value']:
-                print(('%s %s %s %s'%(item['id'], item['filename'], item['creationdate'], item['type'])))
+                print ('%s %s %s %s'%(item['id'], item['filename'], item['creationdate'], item['type']))
         else:
-            print(('Error %d : %s'%(response['errorCode'], response['errorMessage'])))
+            print ('Error %d : %s'%(response['errorCode'], response['errorMessage']))
             
-    except urllib.error.HTTPError as ex_http:
+    except urllib2.HTTPError as ex_http:
         print (ex_http)
 
-def folder_create(authid, path,name):
-    """ Prints out a folder list for the specified path or root if none is provided.
-    
-    Currently prints out id, filename, creationdate, type.  Uncomment the 'print response'
-    line to see the entire response.
+
+def file_upload(subdomain, tld, authid, filepath, optional_params = {}):
+    """ Upload a file to ShareFile.  Requires poster module http://pypi.python.org/pypi/poster/
     
     Args:
         string subdomain
         string tld
         string authid
-        string path folder to list
+        string filepath complete path to local file to upload
+        dictionary optional_parameters see api.sharefile.com for optional parameter names
     """
+    url_params = {'authid':authid, 'fmt':'json', 'op':'upload', 'filename':os.path.basename(filepath)}
+    url_params.update(optional_params)
     
-    url_params = {'authid':authid, 'fmt':'json', 'op':'create', 'path':path, 'name':name}
+    url = 'https://%s.%s/rest/file.aspx?%s'%(subdomain, tld, urllib.urlencode(url_params))
     
-    url = 'https://%s.%s/rest/folder.aspx?%s'%("electric-cloud", "sharefile.com", urllib.parse.urlencode(url_params))
-
+    register_openers()
+    
     try:
-        response = json.loads(urllib.request.urlopen(url).read().decode("utf-8"))
-
-        if not response['error']:
-             print ("folder "+path+"/"+name+" created")
-             print (response)
-        else:
-            print(('Error %d : %s'%(response['errorCode'], response['errorMessage'])))
-            
-    except urllib.error.HTTPError as ex_http:
-        print (ex_http)
+        response = json.loads(urllib2.urlopen(url).read())
         
-def folder_grant(authid, path,email):
-    """ Prints out a folder list for the specified path or root if none is provided.
-    
-    Currently prints out id, filename, creationdate, type.  Uncomment the 'print response'
-    line to see the entire response.
+        if not response['error']:
+            upload_url = response['value']
+            
+            datagen, headers = multipart_encode({'File1':open(filepath, 'rb')})
+            request = urllib2.Request(upload_url, datagen, headers)
+            print ('Starting upload...')
+            upload_response = urllib2.urlopen(request)
+            print (upload_response.read())
+            print ('Upload complete.')
+        else:
+            print ('Error %d : %s'%(response['errorCode'], response['errorMessage']))
+            
+    except urllib2.HTTPError as ex_http:
+        print (ex_http)
+
+def file_download(subdomain, tld, authid, fileid, localpath):
+    """ Downloads a file from ShareFile. 
     
     Args:
-            authid<s>
-            id<s> or path<s>
-            userid<s> or email<s>
-            download<b> (true)
-            upload<b> (false)
-            view<b> (true)
-
+        string subdomain
+        string tld
         string authid
-        string path folder to list
-        
+        string fileid id of the file to download
+        string localpath complete path to download file to including filename
     """
+    url_params = {'authid':authid, 'fmt':'json', 'op':'download', 'id':fileid}
     
-    url_params = {'authid':authid, 'fmt':'json', 'op':'grant', 'path':path, 'email':email}
-    optional_parameters = {'download': True, 'upload': True, 'view' : True}
-    url_params.update(optional_parameters)
-    url = 'https://%s.%s/rest/folder.aspx?%s'%("electric-cloud", "sharefile.com", urllib.parse.urlencode(url_params))
-   
+    url = 'https://%s.%s/rest/file.aspx?%s'%(subdomain, tld, urllib.urlencode(url_params))
+    print (url)
+
     try:
-        response = json.loads(urllib.request.urlopen(url).read().decode("utf-8"))
-
+        response = json.loads(urllib2.urlopen(url).read())
         if not response['error']:
-             print ("folder "+path+" granted to user "+email)
-             print (response)
-        else:
-            print(('Error %d : %s'%(response['errorCode'], response['errorMessage'])))
+            downloadurl = response['value']
+
+            source = urllib2.urlopen(downloadurl)
+            target = open(localpath, 'wb')
+
+            while True:
+                chunk = source.read(8192)
+                if not chunk:
+                    break
+                target.write(chunk)
             
-    except urllib.error.HTTPError as ex_http:
+            target.close()
+            print ('Done downloading.')
+        else:
+            print ('Error %d : %s'%(response['errorCode'], response['errorMessage']))
+            
+    except urllib2.HTTPError as ex_http:
         print (ex_http)
-
-
-
+ 
     
-def users_create( authid, firstname, lastname, email, isemployee):
+def file_send(subdomain, tld, authid, path, to, subject, optional_parameters = {}): 
+    """ Sends a Send a File email.
+    
+    Args:
+        string subdomain
+        string tld
+        string authid
+        string path path to file in ShareFile to send
+        string to email address to send to
+        string subject email subject of the email
+        dictionary optional_parameters see api.sharefile.com for optional parameter names
+    """
+    url_params = {'authid':authid, 'fmt':'json', 'op':'send', 'path':path, 'to':to, 'subject':subject}
+    url_params.update(optional_parameters)    
+    
+    url = 'https://%s.%s/rest/file.aspx?%s'%(subdomain, tld, urllib.urlencode(url_params))
+    print (url)
+    
+    try:
+        response = json.loads(urllib2.urlopen(url).read())
+        if not response['error']:
+            print (response)
+        else:
+            print ('Error %d : %s'%(response['errorCode'], response['errorMessage']))
+            
+    except urllib2.HTTPError as ex_http:
+        print (ex_http)
+    
+    
+def users_create(subdomain, tld, authid, firstname, lastname, email, isemployee, optional_parameters = {}):
     """ Create a client or employee user in ShareFile.
     
     Args:
@@ -204,52 +236,21 @@ def users_create( authid, firstname, lastname, email, isemployee):
         dictionary optional_parameters see api.sharefile.com for optional parameter names
     """
     url_params = {'authid':authid, 'fmt':'json', 'op':'create', 'firstname':firstname, 'lastname':lastname, 'email':email, 'isemployee':isemployee}
-    #url_params.update(optional_parameters)
+    url_params.update(optional_parameters)
     
-    url = 'https://%s.%s/rest/users.aspx?%s'%("electric-cloud", "sharefile.com", urllib.parse.urlencode(url_params))
+    url = 'https://%s.%s/rest/users.aspx?%s'%(subdomain, tld, urllib.urlencode(url_params))
     print (url)
 
     try:
-        response = json.loads(urllib.request.urlopen(url).read().decode("utf-8"))
+        response = json.loads(urllib2.urlopen(url).read())
         if not response['error']:
             print (response)
         else:
-            print(('Error %d : %s'%(response['errorCode'], response['errorMessage'])))
+            print ('Error %d : %s'%(response['errorCode'], response['errorMessage']))
             
-    except urllib.error.HTTPError as ex_http:
+    except urllib2.HTTPError as ex_http:
         print (ex_http)
-        
-def group_list( authid, targetName):
-    """ Prints out a folder list for the specified path or root if none is provided.
-    
-    Currently prints out id, filename, creationdate, type.  Uncomment the 'print response'
-    line to see the entire response.
-    
-    Args:
-        string subdomain
-        string tld
-        string authid
-        string path folder to list
-    """
-    url_params = {'authid':authid, 'fmt':'json', 'op':'list'}
-    
-    url = 'https://%s.%s/rest/group.aspx?%s'%("electric-cloud", "sharefile.com",urllib.parse.urlencode(url_params))
 
-    try:
-        response = json.loads(urllib.request.urlopen(url).read().decode("utf-8"))
-
-        if not response['error']:
-            #print (response)
-            for item in response['value']:
-                if  item['name'] == targetName:
-                    print(('%s %s '%(item['id'], item['name'])))
-                    return item['id']
-                  
-        else:
-            print(('Error %d : %s'%(response['errorCode'], response['errorMessage'])))
-            
-    except urllib.error.HTTPError as ex_http:
-        print (ex_http)
 
 def group_create(subdomain, tld, authid, name, optional_parameters = {}):
     """ Create a distribution group in ShareFile.
@@ -277,43 +278,17 @@ def group_create(subdomain, tld, authid, name, optional_parameters = {}):
     
     url_params.update(optional_parameters)
     
-    url = 'https://%s.%s/rest/group.aspx?%s'%(subdomain, tld, urllib.parse.urlencode(url_params))
+    url = 'https://%s.%s/rest/group.aspx?%s'%(subdomain, tld, urllib.urlencode(url_params))
     print (url)
 
     try:
-        response = json.loads(urllib.request.urlopen(url).read().decode("utf-8"))
+        response = json.loads(urllib2.urlopen(url).read())
         if not response['error']:
             print (response)
         else:
-            print(('Error %d : %s'%(response['errorCode'], response['errorMessage'])))
+            print ('Error %d : %s'%(response['errorCode'], response['errorMessage']))
             
-    except urllib.error.HTTPError as ex_http:
-        print (ex_http)
-def group_addcontacts(authid, contacts,id):
-    """    
-    Adds a single user or comma separated list of users to a distribution group.
-     Users can be either an id or email address.    
-    Args:
-      authid<s>
-      id<s>
-      contacts<l>
-    """
-    
-    url_params = {'authid':authid, 'fmt':'json', 'op':'addcontacts', 'contacts':contacts,'id':id}
-    
-   
-    
-    url = 'https://%s.%s/rest/group.aspx?%s'%("electric-cloud", "sharefile.com", urllib.parse.urlencode(url_params))
-    print (url)
-
-    try:
-        response = json.loads(urllib.request.urlopen(url).read().decode("utf-8"))
-        if not response['error']:
-            print (response)
-        else:
-            print(('Error %d : %s'%(response['errorCode'], response['errorMessage'])))
-            
-    except urllib.error.HTTPError as ex_http:
+    except urllib2.HTTPError as ex_http:
         print (ex_http)
 
 def search(subdomain, tld, authid, query, optional_parameters = {}):
@@ -329,11 +304,11 @@ def search(subdomain, tld, authid, query, optional_parameters = {}):
     url_params = {'authid':authid, 'fmt':'json', 'op':'search', 'query':query}
     url_params.update(optional_parameters)
 
-    url = 'https://%s.%s/rest/search.aspx?%s'%(subdomain, tld, urllib.parse.urlencode(url_params))
+    url = 'https://%s.%s/rest/search.aspx?%s'%(subdomain, tld, urllib.urlencode(url_params))
     print (url)
 
     try:
-        response = json.loads(urllib.request.urlopen(url).read().decode("utf-8"))
+        response = json.loads(urllib2.urlopen(url).read())
         if not response['error']:
             print (response)
             for item in response['value']:
@@ -342,11 +317,11 @@ def search(subdomain, tld, authid, query, optional_parameters = {}):
                     path = '/File Box'
                 else:
                     path = item['parentsemanticpath']
-                print(('%s/%s %s %s'%(path, item['filename'], item['creationdate'], item['type'])))
+                print ('%s/%s %s %s'%(path, item['filename'], item['creationdate'], item['type']))
         else:
-            print(('Error %d : %s'%(response['errorCode'], response['errorMessage'])))
+            print ('Error %d : %s'%(response['errorCode'], response['errorMessage']))
             
-    except urllib.error.HTTPError as ex_http:
+    except urllib2.HTTPError as ex_http:
         print (ex_http)
         
 if __name__ == '__main__':
